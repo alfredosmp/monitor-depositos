@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análisis de Depósitos - Ley Antilavado</title>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- SheetJS for Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <!-- Mammoth for Word files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+    <!-- IndexedDB wrapper -->
+    <script src="idb-keyval.js"></script>
+    <script src="app.js?v=6.0"></script>
+    <link rel="stylesheet" href="style.css?v=6.0">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <div class="header-content">
+                <h1>Monitor de Depósitos</h1>
+                <p>Identificación de umbrales multi-anual para Aviso (Desarrollo Inmobiliario - LFPIORPI)</p>
+            </div>
+        </header>
+
+        <main>
+            <!-- Dashboard de Resumen -->
+            <div class="dashboard-container" id="dashboard-container">
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 1rem;">
+                    <button id="btn-reset-data" class="btn" style="background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        Borrar Datos y Reiniciar
+                    </button>
+                </div>
+
+                <!-- Zonas de Carga Integradas -->
+                <div class="upload-grid" id="upload-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                    <div class="upload-area" id="upload-area" style="padding: 1.5rem 1rem;">
+                        <div class="upload-content" style="display:flex; align-items:center; gap:1rem; justify-content:center;">
+                            <svg class="upload-icon" style="width:32px; height:32px; margin:0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <div style="text-align:left;">
+                                <h2 style="font-size:1.1rem; margin:0;">Excel Auxiliar</h2>
+                                <p style="font-size:0.8rem; margin:0;">Clic o arrastra aquí tu Excel principal</p>
+                            </div>
+                            <input type="file" id="file-input" accept=".xlsx, .xls, .xlsm, .csv" hidden>
+                        </div>
+                    </div>
+
+                    <div class="upload-area" id="global-pdf-area" style="padding: 1.5rem 1rem;">
+                        <div class="upload-content" style="display:flex; align-items:center; gap:1rem; justify-content:center;">
+                            <svg class="upload-icon" style="width:32px; height:32px; margin:0;" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="16" y1="13" x2="8" y2="13"></line>
+                                <line x1="16" y1="17" x2="8" y2="17"></line>
+                                <polyline points="10 9 9 9 8 9"></polyline>
+                            </svg>
+                            <div style="text-align:left;">
+                                <h2 style="font-size:1.1rem; margin:0;">Estados de Cuenta</h2>
+                                <p style="font-size:0.8rem; margin:0;">Clic o arrastra aquí todos tus PDFs</p>
+                            </div>
+                            <input type="file" id="global-file-pdf" accept=".pdf" multiple hidden>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="pdf-list-container" class="pdf-list-container" style="margin-bottom: 2rem;"></div>
+
+                <!-- Loader -->
+                <div class="loader-container hidden" id="loader">
+                    <div class="spinner"></div>
+                    <p>Procesando datos...</p>
+                </div>
+
+                <div class="dashboard-cards">
+                    <div class="card">
+                        <div class="card-icon">👥</div>
+                        <div class="card-info">
+                            <h3>Total Clientes</h3>
+                            <p id="dash-clients">0</p>
+                        </div>
+                    </div>
+                    <div class="card highlight">
+                        <div class="card-icon warning-icon">⚠️</div>
+                        <div class="card-info">
+                            <h3>Avisos Requeridos</h3>
+                            <p id="dash-notices">0</p>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon" style="background: rgba(16, 185, 129, 0.1);">💵</div>
+                        <div class="card-info">
+                            <h3>Aportado por Dueño</h3>
+                            <p id="dash-owner-total" style="font-size:1.5rem;">$0.00</p>
+                        </div>
+                    </div>
+                    <div class="card" style="flex-direction: column; align-items: flex-start;">
+                        <h3 style="color:var(--text-main); margin-bottom: 0.5rem;">Perfil del Dueño (Aportaciones)</h3>
+                        <div class="kyc-upload-area" id="owner-excel-area" style="width: 100%; padding: 1rem;">
+                            <p style="margin: 0; font-size: 0.85rem;">Arrastra o haz clic para subir Excel</p>
+                            <input type="file" id="owner-file-excel" accept=".xlsx, .xls, .xlsm, .csv" hidden>
+                        </div>
+                        <div id="owner-excel-list-container" class="pdf-list-container" style="width: 100%; margin-top: 0.5rem;"></div>
+                    </div>
+                </div>
+                
+                <div class="notices-calendar">
+                    <h3>Calendario de Avisos Histórico (Clic para detalles)</h3>
+                    <p class="subtitle">Recuerda: El aviso debe presentarse a más tardar el día 17 del mes siguiente a la operación que cruzó el umbral.</p>
+                    <div class="calendar-grid" id="calendar-grid">
+                        <!-- Calendar boxes will be injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contenedor de la Tabla -->
+            <div class="results-container" id="results-container">
+                <div class="results-header">
+                    <h2>Análisis Mensual (2024 - 2026)</h2>
+                    <div class="legend">
+                        <span class="legend-item"><span class="color-box warning"></span> Umbral Superado (Aviso)</span>
+                        <span class="legend-item" style="margin-left:1rem;">✅ Expediente Completo</span>
+                        <span class="legend-item">⚠️ Faltan Datos</span>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table id="pivot-table">
+                        <thead>
+                            <tr class="year-header">
+                                <th rowspan="2">Cliente / Concepto</th>
+                                <th colspan="12">2024 (Umbral: $871,274.25)</th>
+                                <th colspan="12">2025 (Umbral: $907,948.50)</th>
+                                <th colspan="12">2026 (Umbral: $941,412.75)</th>
+                                <th rowspan="2">Total Histórico</th>
+                            </tr>
+                            <tr id="months-header">
+                            </tr>
+                        </thead>
+                        <tbody id="pivot-body">
+                            <!-- Rows will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal para Detalle de Avisos (Calendario) -->
+    <div id="notice-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">Detalle de Avisos</h2>
+                <button id="modal-close" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="modal-subtitle" class="subtitle" style="margin-bottom: 1rem;">Operaciones que cruzaron el umbral en este mes:</p>
+                <div id="modal-list" class="modal-list">
+                    <!-- Notice items will go here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Expediente de Cliente (KYC) -->
+    <div id="kyc-modal" class="modal-overlay hidden">
+        <div class="modal-content kyc-content">
+            <div class="modal-header">
+                <div class="kyc-header-titles">
+                    <h2 id="kyc-title">Expediente Cliente</h2>
+                    <span id="kyc-status-badge" class="badge">Validando...</span>
+                </div>
+                <button id="kyc-close" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body kyc-body">
+                <!-- Dropzone for KYC File -->
+                <div class="kyc-upload-area" id="kyc-upload-area">
+                    <p>Arrastra aquí formato KYC (Excel/Word) para autollenar</p>
+                    <input type="file" id="kyc-file-input" accept=".xlsx, .xls, .xlsm, .docx" hidden>
+                </div>
+
+                <form id="kyc-form">
+                    <div class="form-group row">
+                        <label>Tipo de Persona:</label>
+                        <select id="kyc-tipo" class="form-control">
+                            <option value="fisica">Persona Física</option>
+                            <option value="moral">Persona Moral</option>
+                            <option value="fideicomiso">Fideicomiso</option>
+                        </select>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>1. Datos Generales</h3>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Nombre(s) / Denominación</label>
+                                <input type="text" id="kyc-nombre" class="form-control" required>
+                            </div>
+                            <div class="form-group" id="group-apaterno">
+                                <label>Apellido Paterno</label>
+                                <input type="text" id="kyc-apaterno" class="form-control">
+                            </div>
+                            <div class="form-group" id="group-amaterno">
+                                <label>Apellido Materno</label>
+                                <input type="text" id="kyc-amaterno" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>RFC</label>
+                                <input type="text" id="kyc-rfc" class="form-control" required>
+                            </div>
+                            <div class="form-group" id="group-curp">
+                                <label>CURP</label>
+                                <input type="text" id="kyc-curp" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Fecha de Nac./Constitución</label>
+                                <input type="date" id="kyc-fecha" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>País Nacionalidad</label>
+                                <input type="text" id="kyc-nacionalidad" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Actividad / Giro Mercantil</label>
+                                <input type="text" id="kyc-actividad" class="form-control">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>2. Datos de Contacto</h3>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Teléfono</label>
+                                <input type="text" id="kyc-telefono" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Correo Electrónico</label>
+                                <input type="email" id="kyc-correo" class="form-control">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>3. Domicilio</h3>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>País</label>
+                                <input type="text" id="kyc-pais-dom" class="form-control" value="México">
+                            </div>
+                            <div class="form-group">
+                                <label>Estado</label>
+                                <input type="text" id="kyc-estado" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Municipio / Delegación</label>
+                                <input type="text" id="kyc-municipio" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Código Postal</label>
+                                <input type="text" id="kyc-cp" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Colonia</label>
+                                <input type="text" id="kyc-colonia" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Calle, Avenida o Vía</label>
+                                <input type="text" id="kyc-calle" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Num. Exterior</label>
+                                <input type="text" id="kyc-numext" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Num. Interior</label>
+                                <input type="text" id="kyc-numint" class="form-control">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3>4. Características del Inmueble</h3>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Tipo de bien inmueble</label>
+                                <input type="text" id="kyc-tipo-inmueble" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Valor Pactado</label>
+                                <input type="number" id="kyc-valor" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Folio Real (Antecedentes)</label>
+                                <input type="text" id="kyc-folio" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Dimensiones Terreno/Inmueble</label>
+                                <input type="text" id="kyc-dimensiones" class="form-control">
+                            </div>
+                </form>
+            </div>
+            <div class="modal-footer" style="padding:1.5rem; border-top:1px solid var(--border-color); display:flex; justify-content:flex-end;">
+                <button type="button" id="kyc-save-btn" class="btn btn-primary">Guardar Expediente</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Removed Owner Modal -->
+</body>
+</html>
